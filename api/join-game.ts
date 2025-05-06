@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getFirestore as getFirestoreAdmin, FieldValue } from 'firebase-admin/firestore';
+import { NextRequest, NextResponse } from "next/server";
+import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 // --- Firebase Admin Initialization (Edge) ---
 function getFirebaseApp() {
@@ -9,45 +9,59 @@ function getFirebaseApp() {
       credential: cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+        privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(
+          /\\n/g,
+          "\n"
+        ),
       }),
     });
   }
-  return getFirestoreAdmin();
+  return getFirestore();
 }
 
 export const config = {
-  runtime: 'nodejs',
+  runtime: "edge",
 };
 
 // POST /api/join-game
 export default async function handler(req: NextRequest) {
-  if (req.method !== 'POST') {
-    return new NextResponse('Method Not Allowed', { status: 405 });
+  if (req.method !== "POST") {
+    return new NextResponse("Method Not Allowed", { status: 405 });
   }
 
   try {
     const db = getFirebaseApp();
-    const body = await req.json();
-    const gameCodeRaw = body.gameCode || '';
+    const body = (await req.json()) as { gameCode?: string; userId?: string };
+    const gameCodeRaw = body.gameCode || "";
     const userId =
       body.userId ||
-      req.headers.get('x-firebase-uid') ||
-      'anon_' + Math.random().toString(36).slice(2, 8);
+      req.headers.get("x-firebase-uid") ||
+      "anon_" + Math.random().toString(36).slice(2, 8);
 
-    const gameCode = String(gameCodeRaw).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+    const gameCode = String(gameCodeRaw)
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 8);
     if (!gameCode || !userId) {
       return new NextResponse(
-        JSON.stringify({ ok: false, error: 'invalid_code', details: 'Missing game code.' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          ok: false,
+          error: "invalid_code",
+          details: "Missing game code.",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
     // Lookup game by code
-    const gameQuery = await db.collection('games').where('code', '==', gameCode).limit(1).get();
+    const gameQuery = await db
+      .collection("games")
+      .where("code", "==", gameCode)
+      .limit(1)
+      .get();
     if (gameQuery.empty) {
       // HTML or JSON error partial
-      return errorResponse('not_found', 'No game found with that code.', req);
+      return errorResponse("not_found", "No game found with that code.", req);
     }
     const doc = gameQuery.docs[0];
     const data = doc.data();
@@ -58,7 +72,11 @@ export default async function handler(req: NextRequest) {
       // Check if player is already in the list (rejoin allowed)
       const already = data.players.some((p: any) => p.uid === userId);
       if (!already) {
-        return errorResponse('game_full', 'This game already has two players.', req);
+        return errorResponse(
+          "game_full",
+          "This game already has two players.",
+          req
+        );
       }
       // Already joined, let them join lobby
     }
@@ -67,10 +85,10 @@ export default async function handler(req: NextRequest) {
     const alreadyPresent = Array.isArray(data.players)
       ? data.players.some((p: any) => p.uid === userId)
       : false;
-    let assignedColor = 'black';
+    let assignedColor = "black";
     let newPlayersArr = data.players || [];
     if (!alreadyPresent) {
-      assignedColor = (data.players?.length === 0) ? 'white' : 'black';
+      assignedColor = data.players?.length === 0 ? "white" : "black";
       const playerObj = {
         uid: userId,
         color: assignedColor,
@@ -78,27 +96,30 @@ export default async function handler(req: NextRequest) {
       };
       // Add the new player
       newPlayersArr = [...(data.players || []), playerObj];
-      await db.collection('games').doc(gameId).update({
-        players: FieldValue.arrayUnion(playerObj),
-        status: newPlayersArr.length >= 2 ? 'active' : 'waiting',
-      });
+      await db
+        .collection("games")
+        .doc(gameId)
+        .update({
+          players: FieldValue.arrayUnion(playerObj),
+          status: newPlayersArr.length >= 2 ? "active" : "waiting",
+        });
     } else {
-      assignedColor = data.players.find((p: any) => p.uid === userId)?.color || 'black';
+      assignedColor =
+        data.players.find((p: any) => p.uid === userId)?.color || "black";
     }
 
     // Re-fetch the latest document after update
-    const updatedDoc = await db.collection('games').doc(gameId).get();
+    const updatedDoc = await db.collection("games").doc(gameId).get();
     const updatedData = updatedDoc.data();
 
     // Determine domain for absolute invite link
-    const origin =
-      req.headers.get('x-forwarded-host')
-        ? `https://${req.headers.get('x-forwarded-host')}`
-        : 'https://chess.vercel.app';
+    const origin = req.headers.get("x-forwarded-host")
+      ? `https://${req.headers.get("x-forwarded-host")}`
+      : "https://chess.vercel.app";
 
     // Respond with HTML partial or JSON
-    const accept = req.headers.get('accept') || '';
-    if (accept.includes('text/html')) {
+    const accept = req.headers.get("accept") || "";
+    if (accept.includes("text/html")) {
       const html = `
 <div class="flex flex-col items-center gap-6 px-3 py-8">
   <div class="w-full flex flex-col items-center gap-2">
@@ -181,7 +202,7 @@ export default async function handler(req: NextRequest) {
       `;
       return new NextResponse(html, {
         status: 200,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
 
@@ -196,13 +217,13 @@ export default async function handler(req: NextRequest) {
       status: updatedData?.status || null,
     });
   } catch (err: any) {
-    return errorResponse(err?.message || 'Failed to join game', undefined, req);
+    return errorResponse(err?.message || "Failed to join game", undefined, req);
   }
 }
 
 // Helper: Return error as HTMX partial or JSON
 function errorResponse(errorCode: string, details?: string, req?: NextRequest) {
-  const accept = req?.headers?.get('accept') || '';
+  const accept = req?.headers?.get("accept") || "";
   const html = `
 <div
   class="w-full flex flex-col items-center py-8 px-4 gap-5"
@@ -223,7 +244,7 @@ function errorResponse(errorCode: string, details?: string, req?: NextRequest) {
         <span id="error-code-label">${errorCode}</span>
       </div>
       <div class="text-sm text-red-600 font-normal opacity-80 mb-1" id="error-details-region">
-        ${details || ''}
+        ${details || ""}
       </div>
       <button
         data-home-link
@@ -254,10 +275,10 @@ function errorResponse(errorCode: string, details?: string, req?: NextRequest) {
   })();
 </script>
   `;
-  if (accept.includes('text/html')) {
+  if (accept.includes("text/html")) {
     return new NextResponse(html, {
       status: 400,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
   return new NextResponse(
@@ -266,6 +287,6 @@ function errorResponse(errorCode: string, details?: string, req?: NextRequest) {
       error: errorCode,
       details: details || null,
     }),
-    { status: 400, headers: { 'Content-Type': 'application/json' } }
+    { status: 400, headers: { "Content-Type": "application/json" } }
   );
 }

@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, cert, getApps, getFirestore, FieldValue } from 'firebase-admin/app';
-import { getFirestore as getFirestoreAdmin } from 'firebase-admin/firestore';
+import { NextRequest, NextResponse } from "next/server";
+import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 // --- Firebase Admin Initialization (Edge) ---
 function getFirebaseApp() {
@@ -10,43 +10,53 @@ function getFirebaseApp() {
       credential: cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+        privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(
+          /\\n/g,
+          "\n"
+        ),
       }),
     });
   }
-  return getFirestoreAdmin();
+  return getFirestore();
 }
 
 // Generates a unique, 5-letter alphanumeric game code (uppercase)
-async function generateUniqueGameCode(db: ReturnType<typeof getFirebaseApp>, maxAttempts = 5): Promise<string> {
+async function generateUniqueGameCode(
+  db: ReturnType<typeof getFirebaseApp>,
+  maxAttempts = 5
+): Promise<string> {
   for (let i = 0; i < maxAttempts; i++) {
     const code = Math.random().toString(36).substr(2, 5).toUpperCase();
     // Check Firestore for collisions
-    const existing = await db.collection('games').where('code', '==', code).limit(1).get();
+    const existing = await db
+      .collection("games")
+      .where("code", "==", code)
+      .limit(1)
+      .get();
     if (existing.empty) {
       return code;
     }
   }
-  throw new Error('Could not generate unique game code.');
+  throw new Error("Could not generate unique game code.");
 }
 
 // POST handler for creating a new game
 export const config = {
-  runtime: 'nodejs',
+  runtime: "edge",
 };
 
 export default async function handler(req: NextRequest) {
-  if (req.method !== 'POST') {
-    return new NextResponse('Method Not Allowed', { status: 405 });
+  if (req.method !== "POST") {
+    return new NextResponse("Method Not Allowed", { status: 405 });
   }
 
   try {
     const db = getFirebaseApp();
-    const body = await req.json();
+    const body = (await req.json()) as { userId?: string };
     const userId =
       body.userId ||
-      req.headers.get('x-firebase-uid') ||
-      'anon_' + Math.random().toString(36).slice(2, 8);
+      req.headers.get("x-firebase-uid") ||
+      "anon_" + Math.random().toString(36).slice(2, 8);
 
     // Generate code and doc
     const code = await generateUniqueGameCode(db);
@@ -57,45 +67,44 @@ export default async function handler(req: NextRequest) {
       players: [
         {
           uid: userId,
-          color: 'white',
+          color: "white",
           joinedAt: FieldValue.serverTimestamp(),
         },
       ],
-      turn: 'white',
+      turn: "white",
       boardState: {
         board: [
-          ['bR', 'bN', 'bB', 'bQ', 'bK', 'bB', 'bN', 'bR'],
-          ['bP', 'bP', 'bP', 'bP', 'bP', 'bP', 'bP', 'bP'],
+          ["bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"],
+          ["bP", "bP", "bP", "bP", "bP", "bP", "bP", "bP"],
           [null, null, null, null, null, null, null, null],
           [null, null, null, null, null, null, null, null],
           [null, null, null, null, null, null, null, null],
           [null, null, null, null, null, null, null, null],
-          ['wP', 'wP', 'wP', 'wP', 'wP', 'wP', 'wP', 'wP'],
-          ['wR', 'wN', 'wB', 'wQ', 'wK', 'wB', 'wN', 'wR'],
+          ["wP", "wP", "wP", "wP", "wP", "wP", "wP", "wP"],
+          ["wR", "wN", "wB", "wQ", "wK", "wB", "wN", "wR"],
         ],
-        turn: 'white',
+        turn: "white",
         castling: { wK: true, wQ: true, bK: true, bQ: true },
         enPassant: null,
         halfmove: 0,
         fullmove: 1,
       },
       moves: [],
-      status: 'waiting', // lobby until opponent joins
+      status: "waiting", // lobby until opponent joins
     };
 
-    const docRef = await db.collection('games').add(gameDoc);
+    const docRef = await db.collection("games").add(gameDoc);
     const gameId = docRef.id;
 
     // Prepare response for HTMX or JSON (Content-Type negotiation)
-    const accept = req.headers.get('accept') || '';
+    const accept = req.headers.get("accept") || "";
+    const origin = req.headers.get("x-forwarded-host")
+      ? `https://${req.headers.get("x-forwarded-host")}`
+      : "https://chess.vercel.app";
     // If Accept: text/html, serve lobby.html partial
-    if (accept.includes('text/html')) {
+    if (accept.includes("text/html")) {
       // HTMX partial: lobby.html with placeholders replaced
       // You may wish to use a template engine, but Edge Functions are limited: inline string here
-      const origin =
-        req.headers.get('x-forwarded-host')
-          ? `https://${req.headers.get('x-forwarded-host')}`
-          : 'https://chess.vercel.app';
       const html = `
 <div class="flex flex-col items-center gap-6 px-3 py-8">
   <div class="w-full flex flex-col items-center gap-2">
@@ -178,7 +187,7 @@ export default async function handler(req: NextRequest) {
       `;
       return new NextResponse(html, {
         status: 200,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
 
@@ -193,9 +202,9 @@ export default async function handler(req: NextRequest) {
     return new NextResponse(
       JSON.stringify({
         ok: false,
-        error: err?.message || 'Failed to create game',
+        error: err?.message || "Failed to create game",
       }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 }
