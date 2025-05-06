@@ -1,7 +1,14 @@
 {
+  "version": 2,
   "functions": {
     "api/**.ts": {
       "runtime": "@vercel/edge@1.0.0"
     }
-  }
+  },
+  "builds": [
+    {
+      "src": "api/**/*.ts",
+      "use": "@vercel/edge"
+    }
+  ]
 }
