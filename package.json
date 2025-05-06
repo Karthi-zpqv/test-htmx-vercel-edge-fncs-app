@@ -10,7 +10,8 @@
     "start": "vercel start"
   },
   "dependencies": {
-    "firebase-admin": "13.3.0"
+    "firebase-admin": "13.3.0",
+    "@vercel/edge": "^1.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
