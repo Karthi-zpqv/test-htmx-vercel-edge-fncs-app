@@ -1,0 +1,19 @@
+{
+  "name": "chess-together-mvp",
+  "version": "1.0.0",
+  "description": "Realtime chess game MVP with HTMX, Tailwind, Firebase, and Vercel Edge Functions",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "tsc",
+    "start": "vercel start"
+  },
+  "dependencies": {
+    "firebase-admin": "13.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

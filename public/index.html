@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Chess Together – Play Online</title>
+  <!-- Tailwind CSS v4 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- HTMX v1.9.10 CDN -->
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <!-- Firebase SDK v11.6.0 (modular, with App, Firestore, Auth) -->
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore-compat.js"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-tr from-teal-50 to-emerald-100 flex flex-col items-center justify-center">
+  <main class="w-full max-w-md px-6 py-8 bg-white/85 rounded-2xl shadow-xl">
+    <div class="flex flex-col items-center gap-5 mb-7">
+      <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/265f.png" alt="Chess Logo" class="w-16 h-16" />
+      <h1 class="text-3xl font-bold text-emerald-800 text-center tracking-tight">Chess Together</h1>
+      <p class="text-emerald-900 text-center text-base opacity-80">Create or join a live chess game.</p>
+    </div>
+    <!-- Create Game Form -->
+    <form
+      id="create-game-form"
+      class="flex flex-col gap-4 mb-5"
+      hx-post="/api/create-game"
+      hx-target="#main-region"
+      hx-swap="innerHTML"
+      data-htmx-form
+    >
+      <button
+        type="submit"
+        class="w-full inline-flex justify-center items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 transition-all duration-150 focus:ring-2 focus:ring-emerald-400"
+      >
+        <svg class="w-5 h-5 opacity-90" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        Create New Game
+      </button>
+    </form>
+    <!-- Divider -->
+    <div class="flex items-center justify-center mb-2">
+      <span class="text-emerald-700 text-sm px-2 bg-emerald-100 rounded-full">or</span>
+    </div>
+    <!-- Join Game Form -->
+    <form
+      id="join-game-form"
+      class="flex items-center gap-2"
+      hx-post="/api/join-game"
+      hx-target="#main-region"
+      hx-swap="innerHTML"
+      data-htmx-form
+      autocomplete="off"
+    >
+      <input
+        name="gameCode"
+        id="gameCode-input"
+        type="text"
+        required
+        minlength="4"
+        maxlength="8"
+        placeholder="Enter game code"
+        class="flex-1 rounded-lg border border-emerald-300 px-3 py-2 text-emerald-800 bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+        pattern="[A-Za-z0-9]{4,8}"
+        aria-label="Game Code"
+        spellcheck="false"
+      />
+      <button
+        type="submit"
+        class="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 font-semibold transition-all duration-150 focus:ring-2 focus:ring-emerald-400"
+      >
+        Join
+      </button>
+    </form>
+    <!-- Main Dynamic Region (filled by htmx responses) -->
+    <section id="main-region" class="mt-7"></section>
+  </main>
+
+  <script>
+    // --- Firebase Initialization ---
+    function initializeFirebase() {
+      if (!window.firebase?.apps.length) {
+        firebase.initializeApp({
+  apiKey: "AIzaSyAldxfNbCwJ8FgvIKkZs0YldxSuvD5Tros",
+  authDomain: "tiram-gen-apps-dev.firebaseapp.com",
+  projectId: "tiram-gen-apps-dev",
+  storageBucket: "tiram-gen-apps-dev.firebasestorage.app",
+  messagingSenderId: "840404686153",
+  appId: "1:840404686153:web:61f5748dd23271f09f7698",
+  measurementId: "G-0WTW65DNJF"
+});
+      }
+    }
+
+    function signInAnonymouslyIfEnabled() {
+      // Anonymous auth is optional; call if required by backend rules
+      try {
+        const auth = firebase.auth();
+        if (!auth.currentUser) {
+          auth.signInAnonymously().catch(() => {});
+        }
+      } catch (e) {}
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      initializeFirebase();
+      signInAnonymouslyIfEnabled();
+    });
+
+    // --- HTMX and Form Logic for Accessibility ---
+    document.addEventListener("htmx:configRequest", function(evt) {
+      // Attach Firebase UID for request correlation (if available)
+      try {
+        const user = firebase.auth().currentUser;
+        if (user) {
+          evt.detail.headers['X-Firebase-UID'] = user.uid;
+        }
+      } catch (e) {}
+    });
+
+    // Clear #main-region on navigation home
+    document.body.addEventListener("click", function (e) {
+      if (e.target.closest("[data-home-link]")) {
+        document.getElementById("main-region").innerHTML = "";
+        document.getElementById("gameCode-input").value = "";
+      }
+    });
+
+    // Accessibility: autofocus input on error partial or returning
+    document.addEventListener('htmx:afterSwap', function(evt) {
+      if (evt.detail.target && document.getElementById("gameCode-input")) {
+        document.getElementById("gameCode-input").focus();
+      }
+    });
+  </script>
+</body>
+</html>

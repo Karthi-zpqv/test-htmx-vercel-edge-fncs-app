@@ -1,0 +1,70 @@
+<!--
+  error.html
+  HTMX partial or endpoint for displaying error messages.
+  Renders accessible, Tailwind-styled alert, with a home button.
+  Context expected:
+    - errorCode: slug or key (e.g., "not_found", "game_full")
+    - details: string or undefined (optional)
+-->
+<div
+  class="w-full flex flex-col items-center py-8 px-4 gap-5"
+  role="alert"
+  aria-live="assertive"
+  aria-atomic="true"
+>
+  <div class="w-full max-w-md">
+    <div class="rounded-lg border border-red-200 bg-red-50 px-5 py-6 shadow flex flex-col items-center text-center">
+      <div class="flex items-center justify-center gap-2 mb-2">
+        <svg class="w-7 h-7 text-red-400" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" fill="#feebe9"/>
+          <path d="M12 7v6m0 4h.01" stroke="#e11d48" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+        <span class="text-lg font-bold text-red-700">
+          Error
+        </span>
+      </div>
+      <div class="my-2 text-red-700 text-base font-semibold" id="error-message-region">
+        <!-- Server swaps in friendly error based on errorCode -->
+        <span id="error-code-label">
+          {{
+            errorCode === 'game_full' ? 'This game is already full.' :
+            errorCode === 'not_found' ? 'Game not found.' :
+            errorCode === 'invalid_code' ? 'Invalid game code.' :
+            errorCode === 'network' ? 'Network error.' :
+            errorCode === 'forbidden' ? 'You are not allowed to join this game.' :
+            errorCode || 'Something went wrong.'
+          }}
+        </span>
+      </div>
+      <div class="text-sm text-red-600 font-normal opacity-80 mb-1" id="error-details-region">
+        {{details}}
+      </div>
+      <button
+        data-home-link
+        class="mt-6 rounded-md font-semibold px-5 py-2 bg-red-100 hover:bg-red-200 text-red-800 transition border border-red-200"
+        tabindex="0"
+      >
+        &larr; Back to Home
+      </button>
+    </div>
+  </div>
+</div>
+<script>
+  // Optional: Display friendly error if HTMX swaps in slug variables
+  (function () {
+    const errorMap = {
+      game_full: 'This game is already full.',
+      not_found: 'Game not found.',
+      invalid_code: 'Invalid game code.',
+      network: 'Network error.',
+      forbidden: 'You are not allowed to join this game.'
+    };
+    let label = document.getElementById('error-code-label');
+    let code = label && label.innerText && Object.keys(errorMap).includes(label.innerText.trim()) 
+      ? label.innerText.trim()
+      : null;
+    if (code && errorMap[code]) {
+      label.innerText = errorMap[code];
+    }
+  })();
+</script>

@@ -1,0 +1,220 @@
+<!--
+  game.html
+  HTMX partial: Chess gameplay UI for a single game.
+  Required context (inserted by backend/HTMX swap or client js):
+    - gameId: Firestore doc ID
+    - gameCode: Game code (user-friendly, optional)
+    - userColor: "white" | "black"
+    - playerNames: { white: string, black: string }
+    - boardState: FEN or custom struct, optional (prefer client pulls via realtime)
+    - moves: Array of move objects (optional; prefer client pulls)
+    - currentTurn: "white" | "black"
+  Client JS loads firebase, chessboard.js, and firebase.js for realtime + move sync.
+-->
+
+<div class="flex flex-col items-center w-full min-h-[70vh] p-4 md:p-10">
+  <div class="flex flex-col items-center max-w-2xl w-full bg-white/90 rounded-2xl shadow-lg px-4 py-6 gap-6">
+    <!-- Game Header & Info -->
+    <div class="w-full flex flex-row justify-between items-center mb-2">
+      <div class="flex items-center gap-2">
+        <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/265f.png" alt="Chess" class="w-7 h-7" />
+        <span class="text-emerald-700 font-bold text-lg tracking-tight">Chess Together</span>
+      </div>
+      <div class="text-right flex flex-col gap-0 items-end">
+        <span class="uppercase tracking-wider bg-emerald-50 text-emerald-800 px-2 py-1 rounded font-mono text-xs" id="game-code-label">Code: <strong id="game-code">{{gameCode}}</strong></span>
+        <span class="text-xs text-gray-500" id="game-id-label">Game ID: <span class="font-mono">{{gameId}}</span></span>
+      </div>
+    </div>
+
+    <!-- Game Status/Alerts -->
+    <div id="move-alert" class="hidden w-full mb-2"></div>
+
+    <!-- Chessboard and Sidebar (moves/turn) -->
+    <div class="flex flex-col md:flex-row w-full items-center gap-6 md:gap-10">
+      <!-- Chessboard -->
+      <div class="relative">
+        <div id="chessboard-region" class="rounded-md shadow-md overflow-hidden select-none"></div>
+        <!-- Player colors overlay -->
+        <div class="flex justify-between mt-2 text-xs font-semibold text-emerald-700 opacity-70">
+          <span id="color-white-label" class="block pl-1">
+            <svg class="inline w-4 h-4 align-text-bottom mr-1" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#fff" stroke="#bbb" stroke-width="1.5"/></svg>
+            <span id="player-name-white">{{playerNames.white}}</span>
+          </span>
+          <span id="color-black-label" class="block pr-1">
+            <svg class="inline w-4 h-4 align-text-bottom mr-1" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#222" stroke="#222" stroke-width="1.5"/></svg>
+            <span id="player-name-black">{{playerNames.black}}</span>
+          </span>
+        </div>
+      </div>
+      <!-- Sidebar: Turn, Controls, Move List -->
+      <div class="flex flex-col items-stretch gap-4 w-full max-w-xs">
+        <!-- Player Turn -->
+        <div id="player-turn-indicator" class="rounded-lg bg-emerald-100 text-emerald-900 font-semibold py-2 px-4 text-center text-base border border-emerald-200 transition-all">
+          <span id="turn-span">Turn: <span class="font-mono">{{currentTurn}}</span></span>
+        </div>
+        <!-- Controls -->
+        <div class="flex gap-2 justify-between">
+          <button id="resign-btn"
+            type="button"
+            class="flex-1 rounded-md py-2 bg-red-50 hover:bg-red-200 text-red-700 font-bold text-sm border border-red-300 transition-all"
+            tabindex="0"
+          >Resign</button>
+          <button id="restart-btn"
+            type="button"
+            class="flex-1 rounded-md py-2 bg-emerald-50 hover:bg-emerald-200 text-emerald-700 font-bold text-sm border border-emerald-300 transition-all"
+            tabindex="0"
+          >Restart</button>
+        </div>
+        <!-- Move List -->
+        <div class="bg-emerald-50/50 rounded-xl shadow-inner min-h-[180px] max-h-60 overflow-y-auto p-3 border border-emerald-100">
+          <div class="font-semibold text-emerald-600 text-sm mb-1">Move List</div>
+          <ol id="move-list" class="pl-4 list-decimal text-gray-800 text-sm space-y-0.5"></ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Actions (bottom - e.g., Leave game) -->
+    <div class="w-full flex flex-row justify-center mt-3">
+      <button data-home-link class="rounded-lg px-5 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold border border-gray-300 transition" tabindex="0">&larr; Exit</button>
+    </div>
+  </div>
+</div>
+
+<!-- Chessboard/game logic, loaded after page (assume chessboard.js and firebase.js available) -->
+<script>
+  // === Game Constants & Bootstrap ===
+  const GAME_ID = '{{gameId}}' !== '{{' + 'gameId' + '}}' ? '{{gameId}}' : (window.CURRENT_GAME_ID || null);
+  const GAME_CODE = '{{gameCode}}' !== '{{' + 'gameCode' + '}}' ? '{{gameCode}}' : '';
+  const USER_COLOR = '{{userColor}}' !== '{{' + 'userColor' + '}}' ? '{{userColor}}' : null;
+
+  // When this partial is loaded, render board and listen to state.
+  document.addEventListener('DOMContentLoaded', function () {
+    // Ensure firebase.js && chessboard.js loaded
+    if (!(window.firebase && window.chessboard && window.firebaseHelpers)) {
+      setTimeout(() => document.dispatchEvent(new Event('DOMContentLoaded')), 100); // retry (naive, works on CDN load)
+      return;
+    }
+
+    // Chessboard Setup & Live Updates
+    const boardDiv = document.getElementById('chessboard-region');
+    const moveListOl = document.getElementById('move-list');
+    const alertDiv = document.getElementById('move-alert');
+    const turnIndicator = document.getElementById('turn-span');
+    let unsubscribe = null;
+    let localBoardState = null;
+    let localMoves = [];
+    let currentTurn = 'white';
+    let playerColor = USER_COLOR || 'white';
+    let gameOver = false;
+
+    function showAlert(message, type = 'danger') {
+      alertDiv.className =
+        'w-full mb-2 rounded-lg px-3 py-2 font-semibold text-sm ' +
+        (type === 'danger'
+          ? 'bg-red-100 text-red-700 border border-red-200'
+          : type === 'success'
+          ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+          : 'bg-yellow-50 text-amber-900 border border-amber-200');
+      alertDiv.innerText = message;
+      alertDiv.classList.remove('hidden');
+      setTimeout(() => alertDiv.classList.add('hidden'), 3000);
+    }
+
+    function renderMoveList(moves) {
+      moveListOl.innerHTML = '';
+      moves.forEach((move, idx) => {
+        const li = document.createElement('li');
+        li.className = 'whitespace-nowrap';
+        li.innerText = move.san || move.uci || move.move || JSON.stringify(move);
+        moveListOl.appendChild(li);
+      });
+      moveListOl.scrollTop = moveListOl.scrollHeight;
+    }
+
+    function renderTurnIndicator(color, draw = false, over = false) {
+      let str = over ? 'Game Over' : (draw ? 'Draw' : 'Turn: ' + color);
+      turnIndicator.innerHTML = str;
+    }
+
+    function onBoardStateUpdate(bs, movesArr, turn, over = false, draw = false) {
+      localBoardState = bs;
+      localMoves = Array.isArray(movesArr) ? movesArr : [];
+      currentTurn = turn;
+      // Render board
+      window.chessboard.renderChessBoard(boardDiv, bs, {
+        yourColor: playerColor,
+        onMove: handleMoveAttempt,
+        interactive: !over && (currentTurn===playerColor),
+      });
+      // Render move list & status
+      renderMoveList(localMoves);
+      renderTurnIndicator(currentTurn, draw, over);
+      gameOver = over;
+    }
+
+    // Listen to Firestore
+    if (unsubscribe) unsubscribe();
+    if (GAME_ID) {
+      unsubscribe = window.firebaseHelpers.listenOnGameState(GAME_ID, (gameDoc) => {
+        if (!gameDoc) {
+          showAlert('Game not found.', 'danger');
+          boardDiv.innerHTML = '';
+          return;
+        }
+        const { boardState, moves, turn, result } = gameDoc;
+        if (result && result.status === 'over') {
+          // Game finished
+          onBoardStateUpdate(boardState, moves, turn, true, !!result.draw);
+          showAlert(result.reason ? `Game Over: ${result.reason}` : 'Game Over', 'danger');
+        } else {
+          onBoardStateUpdate(boardState, moves, turn);
+        }
+      });
+    }
+
+    // Move Attempt/Validation
+    function handleMoveAttempt(from, to) {
+      if (gameOver) {
+        showAlert('Game is over. Restart to play again.', 'danger');
+        return;
+      }
+      // Validation (optional client-side): check it's your turn!
+      if (currentTurn !== playerColor) {
+        showAlert("Not your turn.", 'danger');
+        return;
+      }
+      // Validate move using chessboard.js logic
+      if (!window.chessboard.isMoveLegal(from, to, localBoardState, playerColor)) {
+        showAlert("Illegal move.", 'danger');
+        return;
+      }
+      // Submit move to Firestore
+      window.firebaseHelpers.submitMoveToFirestore(GAME_ID, { from, to })
+        .then(() => {
+          // Success: Feedback via update
+        })
+        .catch((err) => {
+          showAlert("Failed to submit move.", 'danger');
+        });
+    }
+
+    // Resign/Restart handlers
+    document.getElementById('resign-btn').onclick = function () {
+      if (gameOver) return;
+      if (confirm('Are you sure you want to resign?')) {
+        window.firebaseHelpers.resignGame(GAME_ID)
+          .catch(() => showAlert('Failed to resign.', 'danger'));
+      }
+    };
+    document.getElementById('restart-btn').onclick = function () {
+      if (!gameOver && !confirm('Are you sure you want to restart? This will forfeit the current game.')) return;
+      window.firebaseHelpers.restartGame(GAME_ID)
+        .catch(() => showAlert('Restart failed.', 'danger'));
+    };
+
+    // Clean up listener on partial swap out
+    window.addEventListener('htmx:beforeSwap', function () {
+      if (unsubscribe) unsubscribe();
+    });
+  });
+</script>

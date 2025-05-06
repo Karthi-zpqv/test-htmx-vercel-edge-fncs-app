@@ -1,0 +1,168 @@
+<!--
+  lobby.html
+  HTMX partial: displays game's lobby/waiting room.
+  Required vars (from backend or included via HTMX swap): 
+    - gameCode: The unique game code for this lobby.
+    - gameId: The Firestore document ID.
+    - shareUrl: Complete URL to invite (optional).
+    - userColor: (optional) "white" | "black" if known.
+-->
+<div class="flex flex-col items-center gap-6 px-3 py-8">
+  <div class="w-full flex flex-col items-center gap-2">
+    <div class="flex flex-row items-center gap-1">
+      <span class="uppercase font-mono text-lg tracking-widest text-emerald-800 select-all" id="lobby-game-code" aria-label="Game Code">{{gameCode}}</span>
+      <button
+        type="button"
+        id="copy-code-btn"
+        aria-label="Copy game code"
+        class="ml-2 p-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-full border border-emerald-200 flex items-center transition-all"
+        tabindex="0"
+      >
+        <svg class="w-5 h-5" stroke="currentColor" fill="none" viewBox="0 0 20 20">
+          <rect x="7" y="5" width="7" height="12" rx="2" stroke-width="1.5"/>
+          <rect x="4" y="2" width="7" height="12" rx="2" stroke-width="1.5"/>
+        </svg>
+      </button>
+      <span id="copy-success-msg" class="ml-1 text-emerald-600 text-xs font-medium hidden">Copied!</span>
+    </div>
+    <div class="w-full flex flex-row items-center justify-between mt-2">
+      <a
+        href="https://{{domain}}/join/{{gameCode}}"
+        target="_blank"
+        class="text-emerald-600 underline underline-offset-2 text-sm"
+        id="lobby-share-link"
+        tabindex="0"
+      >
+        Invite link
+      </a>
+      <span class="text-xs text-gray-500 hidden md:inline" tabindex="-1">Share with your friend</span>
+    </div>
+  </div>
+
+  <div class="w-full flex flex-col items-center gap-4 mt-4">
+    <div id="lobby-status"
+      class="flex flex-col items-center gap-2"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      <span class="font-semibold text-emerald-900 text-lg">Waiting for opponent...</span>
+      <span class="flex flex-row items-center gap-1 text-emerald-700 text-sm mt-1">
+        <svg class="animate-spin w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none">
+          <circle class="opacity-30" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path d="M12 2a10 10 0 1 1-8.53 4.94" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+        </svg>
+        <span>Waiting for player to join…</span>
+      </span>
+    </div>
+  </div>
+  <button
+    data-home-link
+    tabindex="0"
+    class="mt-8 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold px-6 py-2 rounded-lg text-sm transition-all border border-emerald-200"
+  >
+    &larr; Back to Home
+  </button>
+</div>
+<script>
+  // == Lobby Partial Client Logic ==
+
+  // --- Copy Game Code ---
+  document.getElementById('copy-code-btn')?.addEventListener('click', function () {
+    const code = document.getElementById('lobby-game-code')?.innerText?.trim();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(function() {
+      const msg = document.getElementById('copy-success-msg');
+      if (msg) {
+        msg.classList.remove('hidden');
+        setTimeout(() => msg.classList.add('hidden'), 1500);
+      }
+    });
+  });
+
+  // --- Share Link fixup ---
+  (function () {
+    const link = document.getElementById('lobby-share-link');
+    // If backend does not provide a valid shareUrl, construct from current location:
+    if (link && !link.href.includes('{{')) {
+      try {
+        const code = document.getElementById('lobby-game-code').innerText;
+        link.href = location.origin + '/join/' + encodeURIComponent(code);
+      } catch (_) {}
+    }
+  })();
+
+  // --- Firestore: Listen To Lobby Status (wait for opponent, then transition) ---
+  (function () {
+    if (
+      typeof firebase === 'undefined' ||
+      !window.firebase?.apps?.length ||
+      typeof firebase.firestore !== 'function'
+    ) return;
+
+    // Assume HTMX/server places gameId as a data attribute or placeholder
+    const gameId = '{{gameId}}' !== '{{' + 'gameId' + '}}' ? '{{gameId}}' :
+      (window.lobbyGameId || null);
+
+    if (!gameId || gameId.includes('{{')) return;
+
+    const db = firebase.firestore();
+    const lobbyStatusDiv = document.getElementById('lobby-status');
+    let unsub = null;
+    unsub = db.collection('games').doc(gameId).onSnapshot(function (doc) {
+      const data = doc && doc.exists ? doc.data() : null;
+      if (!data) {
+        // Document deleted or does not exist
+        if (lobbyStatusDiv) {
+          lobbyStatusDiv.innerHTML =
+            '<div class="text-red-700 bg-red-50 rounded-lg px-4 py-2 text-sm font-semibold" role="alert">Game no longer exists.</div>';
+        }
+        if (unsub) unsub(); // Cleanup
+        return;
+      }
+      // Lobby logic: Detect start
+      const players = data.players || [];
+      if (players.length < 2) {
+        // Still waiting
+        if (lobbyStatusDiv) {
+          lobbyStatusDiv.innerHTML =
+            `<span class="font-semibold text-emerald-900 text-lg">Waiting for opponent...</span>
+             <span class="flex flex-row items-center gap-1 text-emerald-700 text-sm mt-1">
+               <svg class="animate-spin w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none">
+                 <circle class="opacity-30" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                 <path d="M12 2a10 10 0 1 1-8.53 4.94" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+               </svg>
+               <span>Waiting for player to join…</span>
+             </span>`;
+        }
+      } else {
+        // Both players present: Start!
+        if (lobbyStatusDiv) {
+          lobbyStatusDiv.innerHTML =
+            `<span class="font-semibold text-emerald-900 text-lg">Player joined! Starting game…</span>
+             <span class="flex flex-row items-center gap-1 text-emerald-700 text-sm mt-1">
+               <svg class="animate-spin w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none">
+                 <circle class="opacity-30" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                 <path d="M12 2a10 10 0 1 1-8.53 4.94" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+               </svg>
+               <span>Loading…</span>
+             </span>`;
+        }
+        // Swap to game region after slight delay (show transition)
+        setTimeout(function () {
+          if (window.htmx) {
+            // swap: load game.html partial into #main-region
+            window.htmx.ajax('GET', '/game.html?gameId=' + encodeURIComponent(gameId), '#main-region');
+          } else {
+            // fallback: reload page
+            window.location.reload();
+          }
+        }, 750);
+        if (unsub) unsub();
+      }
+    });
+    // Clean up listener when partial swapped out
+    window.addEventListener('htmx:beforeSwap', function (evt) {
+      if (unsub) unsub();
+    });
+  })();
+</script>
