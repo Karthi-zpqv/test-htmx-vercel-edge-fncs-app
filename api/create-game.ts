@@ -42,7 +42,7 @@ async function generateUniqueGameCode(
 
 // POST handler for creating a new game
 export const config = {
-  runtime: "edge",
+  runtime: "experimental-edge",
 };
 
 export default async function handler(req: NextRequest) {

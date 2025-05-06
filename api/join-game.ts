@@ -20,7 +20,7 @@ function getFirebaseApp() {
 }
 
 export const config = {
-  runtime: "edge",
+  runtime: "experimental-edge",
 };
 
 // POST /api/join-game

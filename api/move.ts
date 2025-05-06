@@ -20,7 +20,7 @@ function getFirebaseApp() {
 }
 
 export const config = {
-  runtime: "edge",
+  runtime: "experimental-edge",
 };
 
 // Minimal move validation helpers (mirroring chessboard.js; backend is authoritative but simple)

@@ -1,9 +1,8 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/**/*.ts",
-      "use": "@vercel/edge"
+  "functions": {
+    "api/*.ts": {
+      "runtime": "experimental-edge"
     }
-  ]
+  }
 }
