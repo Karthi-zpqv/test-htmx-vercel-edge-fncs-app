@@ -2,14 +2,6 @@
 // Client-side Firebase helpers using SDK v11.6.0 (compat, loaded via CDN in HTML)
 
 // This file expects firebase to be loaded globally and a config object to be injected as {
-  apiKey: "AIzaSyAldxfNbCwJ8FgvIKkZs0YldxSuvD5Tros",
-  authDomain: "tiram-gen-apps-dev.firebaseapp.com",
-  projectId: "tiram-gen-apps-dev",
-  storageBucket: "tiram-gen-apps-dev.firebasestorage.app",
-  messagingSenderId: "840404686153",
-  appId: "1:840404686153:web:61f5748dd23271f09f7698",
-  measurementId: "G-0WTW65DNJF"
-}
 // See index.html for initialization logic
 
 (function (global) {
