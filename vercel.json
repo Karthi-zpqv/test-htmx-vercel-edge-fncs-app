@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/*.ts": {
-      "runtime": "experimental-edge"
+      "runtime": "edge@2"
     }
   }
 }
